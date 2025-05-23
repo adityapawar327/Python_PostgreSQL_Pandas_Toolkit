@@ -14,159 +14,219 @@ from langchain_ollama.llms import OllamaLLM
 # Initialize embeddings and model with improved parameters
 @st.cache_resource
 def load_language_models():
-    embeddings = OllamaEmbeddings(model="deepseek-r1:1.5b")
-    model = OllamaLLM(model="deepseek-r1:1.5b", temperature=0.1)  # Lower temperature for more factual responses
+    embeddings = OllamaEmbeddings(model="deepseek-r1:latest")
+    # Adjusted parameters for better context retention
+    model = OllamaLLM(
+        model="deepseek-r1:latest", 
+        temperature=0.1,
+        num_ctx=8192,  # Increased context window
+        repeat_penalty=1.1,
+        top_k=40,
+        top_p=0.9
+    )
     return embeddings, model
 
 embeddings, model = load_language_models()
 
-# Improved prompt templates
+# Enhanced prompt templates with better context preservation
 default_template = """
-You are a data analysis assistant working with tabular data from Excel or CSV files.
+You are a professional data analyst working with tabular data from Excel or CSV files.
 
-Question: {question}
-
-Table Data:
+DATASET CONTEXT:
 {context}
 
-Guidelines for answering:
-1. Base your answer SOLELY on the data provided in the context.
-2. If the required information isn't present in the context, say "I can't answer based on the provided context."
-3. When doing calculations:
-   - Be precise with numbers
-   - Show your calculation steps briefly
-   - Explicitly mention which columns you used
-4. For aggregation questions (counts, sums, averages):
-   - Double-check your math
-   - Only include rows that are visible in the context
-5. When describing trends or patterns:
-   - Cite specific examples from the data
-   - Avoid making generalizations beyond what's shown
+USER QUESTION: {question}
 
-Data Format Awareness:
-- Data is presented as tabular CSV with headers as the first row
-- Some columns may have decimal values that need proper handling
-- Columns with text data may contain commas inside quoted fields
+ANALYSIS GUIDELINES:
+1. Use ONLY the data provided in the DATASET CONTEXT above
+2. If information isn't available in the context, clearly state "Based on the provided data, I cannot determine..."
+3. For calculations:
+   - Show your work step by step
+   - Cite specific column names and values
+   - Double-check arithmetic
+4. For data quality issues:
+   - Point to specific examples from the data
+   - Quantify the scope of issues
+5. Always reference the actual column names and data structure shown in the context
 
-Your answer:
+RESPONSE FORMAT:
+- Start with a direct answer to the question
+- Follow with supporting details from the data
+- End with actionable recommendations if applicable
+
+Your analysis:
 """
 
 summary_template = """
-### Data Analysis Task
-You need to create a professional data quality summary for an Excel/CSV dataset.
+You are a data quality specialist creating a comprehensive analysis report.
 
-### Dataset Information
+DATASET INFORMATION:
 {context}
 
-### Required Output Format
-Create a concise DATA QUALITY REPORT with these sections:
+TASK: Create a professional DATA QUALITY REPORT with these sections:
 
-1. DATASET OVERVIEW
-   - Total rows and columns
-   - Column names and their apparent data types (numeric, text, date, etc.)
-   - Brief description of what the dataset appears to contain
+## DATASET OVERVIEW
+- Dataset dimensions (rows × columns)
+- Column inventory with data types
+- Primary purpose/content of the dataset
 
-2. DATA QUALITY ISSUES
-   - Null/missing values (count per column, percentage of total)
-   - Potential errors (negative values where inappropriate, outliers)
-   - Format inconsistencies (dates, numbers, text)
-   - Duplicate records (if detectable)
+## DATA QUALITY ASSESSMENT
+### Missing Values
+- Columns with missing data and percentages
+- Impact assessment of missing values
 
-3. ACTIONABLE RECOMMENDATIONS
-   - 3-5 specific Excel actions to clean the data
-   - For each suggestion, include the exact Excel feature and how to use it
+### Data Consistency Issues
+- Type mismatches or format inconsistencies
+- Duplicate records analysis
+- Range/boundary violations
 
-Keep your report clear, direct, and focused on information that would help someone clean this dataset efficiently.
+### Data Integrity Concerns
+- Outliers and anomalies
+- Logical inconsistencies
+- Referential integrity issues
+
+## ACTIONABLE RECOMMENDATIONS
+### Immediate Fixes (High Priority)
+- Critical issues requiring immediate attention
+- Specific Excel steps to resolve each issue
+
+### Data Enhancement (Medium Priority)
+- Improvements to data structure and quality
+- Standardization recommendations
+
+### Prevention Measures (Ongoing)
+- Data validation rules to implement
+- Quality control procedures
+
+Provide specific, actionable guidance that an Excel user can immediately implement such providing with the VBA in excel and Excel formulas which can help .
 """
 
 defects_template = """
-You are an Excel data cleaning specialist. Based on the following dataset defect analysis:
+You are an Excel data cleaning specialist. Analyze the following defect report and create a comprehensive repair plan.
 
+DEFECT ANALYSIS:
 {context}
 
-Create a DETAILED DATA REPAIR PLAN with these sections:
+Create a DETAILED DATA REPAIR GUIDE with these sections:
 
-1. DEFECT SUMMARY
-   - List of all identified defects
-   - Priority level for each issue (Critical/Medium/Low)
+## EXECUTIVE SUMMARY
+- Total defects identified
+- Critical vs. non-critical issues
+- Estimated effort required
 
-2. FOR EACH CRITICAL DEFECT:
-   - Detailed explanation of the issue
-   - Step-by-step Excel fix instructions with:
-     * Manual fix procedure using Excel UI
-     * Excel formula solution
-     * VBA or Power Query solution (if appropriate)
-   - Screenshots or detailed descriptions of where to find relevant Excel features
+## CRITICAL DEFECTS (Fix Immediately)
+For each critical defect:
+### Issue: [Defect Name]
+- **Problem**: Detailed explanation
+- **Impact**: How it affects data reliability
+- **Excel Solution**:
+  * Manual steps using Excel interface
+  * Formula-based approach: `=FORMULA_HERE`
+  * Alternative Power Query/VBA solution if needed
+- **Validation**: How to verify the fix worked
 
-3. FOR MEDIUM AND LOW DEFECTS:
-   - Brief explanation and quick fix suggestions
+## MODERATE DEFECTS (Schedule for Resolution)
+[Similar format for medium-priority issues]
 
-4. PREVENTION PLAN:
-   - Data validation rules to prevent future occurrences
-   - Excel templates or structures to recommend
+## MINOR DEFECTS (Address When Time Permits)
+[Simplified fixes for low-priority issues]
 
-Your goal is to provide an Excel user with EVERYTHING they need to fix these issues completely.
+## PREVENTION STRATEGY
+- Data validation rules to implement
+- Excel templates to standardize data entry
+- Quality check procedures
+
+Ensure all solutions are specific to Excel and include exact menu paths, formula syntax, and step-by-step instructions.
 """
 
-# Improved function to convert dataframe to text chunks
-def dataframe_to_text_chunks(df, chunk_size=1500, chunk_overlap=200, max_rows_per_chunk=50):
-    """Convert dataframe to text chunks with improved handling of tabular structure."""
-    # First, ensure we have string column names to avoid issues
+# Improved function to convert dataframe to text chunks with better context preservation
+def dataframe_to_text_chunks(df, chunk_size=2000, chunk_overlap=300, max_rows_per_chunk=75):
+    """Convert dataframe to text chunks with enhanced context preservation."""
     df.columns = df.columns.astype(str)
-    
-    # Get total number of rows
     total_rows = len(df)
-    
-    # Calculate how many chunks we need based on max_rows_per_chunk
-    num_row_chunks = (total_rows + max_rows_per_chunk - 1) // max_rows_per_chunk
     
     chunks = []
     
-    # Create chunk of full schema (column names and types)
-    schema_info = "DATASET SCHEMA:\n"
-    for col in df.columns:
-        col_type = str(df[col].dtype)
-        # Try to determine if it's likely a date column
-        date_likelihood = "possible date" if any(["date" in col.lower(), "time" in col.lower()]) else ""
-        schema_info += f"- {col} ({col_type}) {date_likelihood}\n"
+    # Enhanced schema information with sample data
+    schema_info = f"DATASET SCHEMA AND STRUCTURE:\n"
+    schema_info += f"Total Dimensions: {total_rows} rows × {len(df.columns)} columns\n\n"
+    schema_info += "COLUMN DETAILS:\n"
     
-    schema_doc = Document(page_content=schema_info, metadata={"chunk_type": "schema"})
+    for col in df.columns:
+        dtype = str(df[col].dtype)
+        unique_count = df[col].nunique()
+        null_count = df[col].isnull().sum()
+        null_pct = (null_count / total_rows) * 100 if total_rows > 0 else 0
+        
+        # Get sample values (non-null)
+        sample_values = df[col].dropna().astype(str).head(3).tolist()
+        sample_str = f"Examples: {', '.join(sample_values)}" if sample_values else "No valid examples"
+        
+        schema_info += f"• {col}:\n"
+        schema_info += f"  - Type: {dtype}\n"
+        schema_info += f"  - Unique values: {unique_count:,}\n"
+        schema_info += f"  - Missing: {null_count} ({null_pct:.1f}%)\n"
+        schema_info += f"  - {sample_str}\n\n"
+    
+    schema_doc = Document(
+        page_content=schema_info, 
+        metadata={"chunk_type": "schema", "priority": "high"}
+    )
     chunks.append(schema_doc)
     
-    # Basic statistics for numeric columns
+    # Enhanced statistics with context
     numeric_cols = df.select_dtypes(include=['number']).columns
     if len(numeric_cols) > 0:
-        stats_info = "NUMERIC COLUMN STATISTICS:\n"
+        stats_info = "NUMERIC COLUMNS STATISTICAL ANALYSIS:\n\n"
         for col in numeric_cols:
             try:
                 stats = df[col].describe()
                 stats_info += f"Column: {col}\n"
-                stats_info += f"- Min: {stats['min']}\n"
-                stats_info += f"- Max: {stats['max']}\n"
-                stats_info += f"- Mean: {stats['mean']}\n"
-                stats_info += f"- Count: {stats['count']}\n"
-                stats_info += f"- Missing: {df[col].isna().sum()}\n\n"
-            except:
-                stats_info += f"Column: {col} - Unable to calculate statistics\n\n"
+                stats_info += f"• Count: {int(stats['count']):,} valid values\n"
+                stats_info += f"• Range: {stats['min']:.2f} to {stats['max']:.2f}\n"
+                stats_info += f"• Average: {stats['mean']:.2f}\n"
+                stats_info += f"• Median: {stats['50%']:.2f}\n"
+                stats_info += f"• Standard Deviation: {stats['std']:.2f}\n"
+                
+                # Check for potential issues
+                neg_count = (df[col] < 0).sum()
+                zero_count = (df[col] == 0).sum()
+                if neg_count > 0:
+                    stats_info += f"• Negative values: {neg_count}\n"
+                if zero_count > 0:
+                    stats_info += f"• Zero values: {zero_count}\n"
+                
+                stats_info += "\n"
+            except Exception as e:
+                stats_info += f"Column: {col} - Statistics unavailable: {str(e)}\n\n"
         
-        stats_doc = Document(page_content=stats_info, metadata={"chunk_type": "statistics"})
+        stats_doc = Document(
+            page_content=stats_info, 
+            metadata={"chunk_type": "statistics", "priority": "medium"}
+        )
         chunks.append(stats_doc)
     
-    # Process each row chunk
+    # Process data in chunks with better overlap handling
+    num_row_chunks = (total_rows + max_rows_per_chunk - 1) // max_rows_per_chunk
+    
     for i in range(num_row_chunks):
         start_idx = i * max_rows_per_chunk
         end_idx = min(start_idx + max_rows_per_chunk, total_rows)
         
-        # Get the subset of rows
-        subset_df = df.iloc[start_idx:end_idx]
+        # Add overlap from previous chunk if not the first chunk
+        if i > 0:
+            overlap_start = max(0, start_idx - 5)  # 5 rows overlap
+            subset_df = df.iloc[overlap_start:end_idx]
+            rows_info = f"DATA CHUNK [{overlap_start+1} to {end_idx}] (includes 5-row overlap):\n"
+        else:
+            subset_df = df.iloc[start_idx:end_idx]
+            rows_info = f"DATA CHUNK [{start_idx+1} to {end_idx}]:\n"
         
-        # Convert to CSV string but preserve table structure better
+        # Convert to CSV with better formatting
         csv_buffer = StringIO()
-        subset_df.to_csv(csv_buffer, index=False)
+        subset_df.to_csv(csv_buffer, index=True)  # Include row indices for reference
         csv_text = csv_buffer.getvalue()
         
-        # Add row indices information to help with context
-        rows_info = f"DATA ROWS [{start_idx+1} to {end_idx}]:\n"
         chunk_content = rows_info + csv_text
         
         chunk_doc = Document(
@@ -176,36 +236,160 @@ def dataframe_to_text_chunks(df, chunk_size=1500, chunk_overlap=200, max_rows_pe
                 "row_start": start_idx,
                 "row_end": end_idx,
                 "num_rows": end_idx - start_idx,
-                "total_rows": total_rows
+                "total_rows": total_rows,
+                "priority": "high" if i < 2 else "medium"  # Prioritize first chunks
             }
         )
         chunks.append(chunk_doc)
     
-    # If there are too many chunks, use a text splitter to further break them down
-    if len(chunks) > 15:  # Arbitrary threshold
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            add_start_index=True
-        )
-        
-        # Only apply text splitting to the data row chunks, not schema/stats
-        data_chunks = [chunk for chunk in chunks if chunk.metadata.get("chunk_type") == "data_rows"]
-        other_chunks = [chunk for chunk in chunks if chunk.metadata.get("chunk_type") != "data_rows"]
-        
-        split_data_chunks = []
-        for chunk in data_chunks:
-            split_chunks = text_splitter.split_documents([chunk])
-            for i, split_chunk in enumerate(split_chunks):
-                # Preserve the original metadata and add split information
-                split_chunk.metadata.update(chunk.metadata)
-                split_chunk.metadata["split_index"] = i
-                split_data_chunks.append(split_chunk)
-        
-        # Combine the split data chunks with the other chunks
-        return other_chunks + split_data_chunks
-    
     return chunks
+
+# Enhanced retrieval with better context management
+def retrieve_docs(db, query, k=6):
+    """Enhanced document retrieval with better context awareness."""
+    query_lower = query.lower()
+    
+    # Always get schema information
+    schema_docs = []
+    try:
+        schema_results = db.similarity_search(query, k=2, filter={"chunk_type": "schema"})
+        schema_docs.extend(schema_results)
+    except:
+        pass
+    
+    # Determine query type and adjust retrieval strategy
+    stats_keywords = ["average", "mean", "maximum", "minimum", "count", "statistics", "sum", "total"]
+    structure_keywords = ["column", "field", "schema", "structure", "type", "datatype"]
+    
+    if any(keyword in query_lower for keyword in stats_keywords):
+        # Statistics-focused query
+        try:
+            stats_docs = db.similarity_search(query, k=2, filter={"chunk_type": "statistics"})
+            data_docs = db.similarity_search(query, k=k-len(schema_docs)-len(stats_docs))
+            return schema_docs + stats_docs + data_docs
+        except:
+            pass
+    elif any(keyword in query_lower for keyword in structure_keywords):
+        # Structure-focused query
+        data_docs = db.similarity_search(query, k=k-len(schema_docs))
+        return schema_docs + data_docs
+    
+    # General query - get mixed results with priority weighting
+    try:
+        # Get high-priority chunks first
+        high_priority_docs = db.similarity_search(query, k=k//2, filter={"priority": "high"})
+        remaining_k = k - len(high_priority_docs)
+        if remaining_k > 0:
+            other_docs = db.similarity_search(query, k=remaining_k)
+            # Remove duplicates
+            seen_content = {doc.page_content for doc in high_priority_docs}
+            other_docs = [doc for doc in other_docs if doc.page_content not in seen_content]
+            return high_priority_docs + other_docs[:remaining_k]
+        return high_priority_docs
+    except:
+        # Fallback to simple similarity search
+        return db.similarity_search(query, k=k)
+
+# Significantly improved query function with better context handling
+def question_df(question, documents, prompt_template=None, input_vars=None):
+    """Enhanced query function with improved context preservation and error handling."""
+    try:
+        # Build comprehensive context from documents
+        context_parts = []
+        
+        # Organize documents by type for better context flow
+        schema_docs = [doc for doc in documents if doc.metadata.get("chunk_type") == "schema"]
+        stats_docs = [doc for doc in documents if doc.metadata.get("chunk_type") == "statistics"]
+        data_docs = [doc for doc in documents if doc.metadata.get("chunk_type") == "data_rows"]
+        
+        # Always include schema for context
+        for doc in schema_docs:
+            context_parts.append("=== DATASET STRUCTURE ===")
+            context_parts.append(doc.page_content)
+            context_parts.append("")
+        
+        # Include statistics if relevant or available
+        if stats_docs:
+            context_parts.append("=== STATISTICAL SUMMARY ===")
+            for doc in stats_docs:
+                context_parts.append(doc.page_content)
+            context_parts.append("")
+        
+        # Add data samples with clear separation
+        if data_docs:
+            context_parts.append("=== DATA SAMPLES ===")
+            for i, doc in enumerate(data_docs):
+                if i > 0:
+                    context_parts.append("--- Next Data Section ---")
+                context_parts.append(doc.page_content)
+                context_parts.append("")
+        
+        # Combine all context with clear structure
+        full_context = "\n".join(context_parts)
+        
+        # Use appropriate prompt template
+        if prompt_template and input_vars:
+            # For custom templates, ensure context is properly included
+            if "context" not in input_vars:
+                input_vars["context"] = full_context
+            elif "{context}" in prompt_template:
+                # Replace or supplement existing context
+                input_vars["context"] = full_context
+            
+            prompt = ChatPromptTemplate.from_template(prompt_template)
+        else:
+            # Default template with enhanced context
+            prompt = ChatPromptTemplate.from_template(default_template)
+            input_vars = {"question": question, "context": full_context}
+        
+        # Create and execute the chain
+        chain = prompt | model
+        
+        # Enhanced retry logic with exponential backoff
+        max_retries = 3
+        base_delay = 1
+        
+        for attempt in range(max_retries + 1):
+            try:
+                # Add small delay to prevent overwhelming the model
+                if attempt > 0:
+                    time.sleep(base_delay * (2 ** (attempt - 1)))
+                
+                response = chain.invoke(input_vars)
+                
+                # Validate response quality
+                if len(response.strip()) < 10:
+                    raise ValueError("Response too short, likely incomplete")
+                
+                return response
+                
+            except Exception as e:
+                error_msg = str(e).lower()
+                if attempt < max_retries:
+                    if any(keyword in error_msg for keyword in ["timeout", "connection", "rate"]):
+                        continue  # Retry for network issues
+                    elif "context" in error_msg or "token" in error_msg:
+                        # Try with reduced context
+                        if len(full_context) > 4000:
+                            # Truncate context and try again
+                            truncated_context = full_context[:4000] + "\n... [Context truncated due to length limits]"
+                            input_vars["context"] = truncated_context
+                            continue
+                
+                # If all retries failed, provide helpful error message
+                if "context" in error_msg or "token" in error_msg:
+                    return ("I apologize, but the dataset is too large for me to process in a single response. "
+                           "Please try asking about a specific aspect of your data (e.g., 'analyze column X' or "
+                           "'show me the first 10 rows') or consider breaking your question into smaller parts.")
+                else:
+                    return f"I encountered an error while analyzing your data: {str(e)}. Please try rephrasing your question or check if Ollama is running properly."
+                
+    except Exception as e:
+        return f"Error processing your query: {str(e)}. Please ensure your question is clear and try again."
+
+# Rest of your code remains the same...
+# [Include all the other functions like create_vector_store_from_df, get_df_summary, 
+# detect_defects_and_format_issues, and ai_chat function here]
 
 # Create vector store from dataframe chunks with improved metadata
 def create_vector_store_from_df(df):
@@ -546,7 +730,7 @@ FAQ_QUESTIONS = [
 def ai_chat():
     
     st.title("🤖 Excel & CSV Data Assistant")
-    st.caption("Powered by Ollama and deepseek-r1:1.5b • Your local AI data analyst")
+    st.caption("Powered by Ollama and deepseek-r1:latest • Your local AI data analyst")
     
     # Initialize session state variables
     if "chat_history" not in st.session_state:
